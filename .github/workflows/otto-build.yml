@@ -152,7 +152,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag }}
+          tag_name: ${{ inputs.release_tag || 'otto-build'}}
           name: "OttoWrt"
           body: |
             ## 基本信息
