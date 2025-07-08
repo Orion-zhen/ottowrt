@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: 0 0 * * 4
 
+  push:
+    branches:
+      - main
+    paths:
+      - .config
+      - .github/workflows/otto-build.yml
+
   workflow_dispatch:
     inputs:
       release_tag:
