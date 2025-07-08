@@ -1,0 +1,168 @@
+name: Otto Build
+
+on:
+  schedule:
+    - cron: 0 0 * * 4
+
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        type: string
+        description: release tag
+        default: "otto-build"
+
+      use-cache:
+        type: boolean
+        description: use cache
+        default: false
+
+      cleanup-cache:
+        type: boolean
+        description: cleanup build cache
+        default: false
+
+env:
+  REPO_NAME: immortalwrt/immortalwrt
+  REPO_BRANCH: master
+  WORKDIR: openwrt
+
+jobs:
+  otto-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with: 
+          root-reserve-mb: 10240
+          swap-size-mb: 1
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Setup Build Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update -y
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+            g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
+            libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+            libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
+            ninja-build p7zip p7zip-full patch pkgconf python3 python3-full python3-setuptools python3-pip python3-ply python3-docutils \
+            python3-pyelftools python3-netifaces qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+            upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd tree
+
+      - name: System Overview
+        run: |
+          echo "警告⚠"
+          echo "分配的服务器性能有限, 若选择的插件过多, 务必注意CPU性能!"
+          echo "云编译建议取消勾选Node.js及其相关插件!"
+          echo "已知CPU型号(降序): 7763, 8370C, 8272CL, 8171M, E5 系列"
+          echo "--------------------------CPU信息--------------------------"
+          echo "CPU物理数量: $(cat /proc/cpuinfo| grep "physical id"| sort| uniq| wc -l)"
+          echo -e "CPU核心及版本信息: $(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c) \n"
+          echo "--------------------------内存信息--------------------------"
+          echo "已安装内存详细信息:"
+          sudo lshw -short -C memory | grep GiB
+          echo -e "\n"
+          echo "------stupidloud/cachewrtbuild@main--------------------硬盘信息--------------------------"
+          echo -e  "硬盘数量: $(ls /dev/sd* | grep -v [1-9] | wc -l) \n"
+          echo "硬盘详情:"
+          df -Th
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Source Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REPO_NAME }}
+          ref: ${{ env.REPO_BRANCH }}
+          path: ${{ github.workspace }}/${{ env.WORKDIR }}
+
+      - name: Cache
+        if: ${{ inputs.use-cache }}
+        uses: stupidloud/cachewrtbuild@main
+        with:
+          ccache: true
+          mixkey: x86_64
+          prefix: ${{ github.workspace }}/${{ env.WORKDIR }}
+          clean: ${{ inputs.cleanup-cache }}
+
+      - name: Feeds
+        run: |
+          cd ${{ github.workspace }}/${{ env.WORKDIR }}
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Customize Config
+        run: |
+          export FORCE_UNSAFE_CONFIGURE=1
+          cd ${{ github.workspace }}/${{ env.WORKDIR }}
+          cp ${{ github.workspace }}/.config .
+
+          # 避免 config out of sync
+          make defconfig
+
+          # 修改默认 IP 为 192.168.114.1/24
+          # 避免与光猫冲突
+          sed -i 's/192.168.1.1/192.168.114.1/g' package/base-files/files/bin/config_generate
+
+          # 修改默认 shell 为 fish
+          sed -i 's/\/bin\/ash/\/bin\/fish/' package/base-files/files/etc/passwd
+
+      - name: Make Download
+        run: |
+          export FORCE_UNSAFE_CONFIGURE=1
+          cd ${{ github.workspace }}/${{ env.WORKDIR }}
+          make download -j$(nproc)
+
+      - name: Build
+        run: |
+          export FORCE_UNSAFE_CONFIGURE=1
+          cd ${{ github.workspace }}/${{ env.WORKDIR }}
+          make -j$(nproc)
+
+      - name: Delete Stale Release
+        run: |
+          gh release delete ${{ inputs.release_tag }} --cleanup-tag --yes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: "OttoWrt"
+          body: |
+            ## 基本信息
+
+            - 源仓库: [${{ env.REPO_NAME }}](https://github.com/${{ env.REPO_NAME }})
+            - IP: 192.168.114.1
+            - 用户名: root
+            - 密码: 无
+          draft: false
+          prerelease: false
+          files: |
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/sha256sums
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.buildinfo
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.manifest
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.json
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.gz
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.bin
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.iso
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.qcow2
+            ${{ github.workspace }}/${{ env.WORKDIR }}/bin/targets/**/*.vhdx
