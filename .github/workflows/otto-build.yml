@@ -144,7 +144,7 @@ jobs:
 
       - name: Delete Stale Release
         run: |
-          gh release delete ${{ inputs.release_tag }} --cleanup-tag --yes
+          gh release delete ${{ inputs.release_tag || 'otto-build' }} --cleanup-tag --yes
         env:
           GH_TOKEN: ${{ github.token }}
         continue-on-error: true
@@ -152,7 +152,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || 'otto-build'}}
+          tag_name: ${{ inputs.release_tag || 'otto-build' }}
           name: "OttoWrt"
           body: |
             ## 基本信息
