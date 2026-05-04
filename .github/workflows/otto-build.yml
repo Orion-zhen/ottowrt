@@ -89,14 +89,15 @@ jobs:
           df -Th
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Fetch Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.REPO_NAME }}
           ref: ${{ env.REPO_BRANCH }}
           path: ${{ github.workspace }}/${{ env.WORKDIR }}
+          fetch-depth: 0
 
       - name: Cache
         if: ${{ inputs.use-cache }}
@@ -147,7 +148,7 @@ jobs:
         continue-on-error: true
 
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag || 'otto-build' }}
           name: "OttoWrt"
