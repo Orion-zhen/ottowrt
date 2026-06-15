@@ -134,6 +134,17 @@ jobs:
           cd ${{ github.workspace }}/${{ env.WORKDIR }}
           make download -j$(nproc)
 
+      - name: Patch Netdata
+        run: |
+          cd ${{ github.workspace }}/${{ env.WORKDIR }}
+          MF="feeds/packages/admin/netdata/Makefile"; \
+          if [ -f "$MF" ]; then \
+            grep -qF -- "--disable-cloud" "$MF" || printf '\nCONFIGURE_ARGS += --disable-cloud\n' >> "$MF"; \
+            grep -n -- "--disable-cloud" "$MF"; \
+          else \
+            echo "Makefile not found: $MF" >&2; exit 1; \
+          fi
+
       - name: Build
         run: |
           export FORCE_UNSAFE_CONFIGURE=1
