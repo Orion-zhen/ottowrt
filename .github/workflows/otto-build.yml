@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - configs/essential.config
+      - patch-build.sh
       - .github/workflows/otto-build.yml
 
   workflow_dispatch:
@@ -114,16 +115,15 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Patch Build
+        run: |
+          bash "${{ github.workspace }}/patch-build.sh" "${{ github.workspace }}/${{ env.WORKDIR }}"
+
       - name: Customize Config
         run: |
           export FORCE_UNSAFE_CONFIGURE=1
           cd ${{ github.workspace }}/${{ env.WORKDIR }}
           cp ${{ github.workspace }}/configs/essential.config .config
-
-          # 修改默认 IP 为 192.168.114.1/24
-          # 避免与光猫冲突
-          # 已在配置文件中修改 preinit IP.
-          # sed -i 's/192.168.1.1/192.168.114.1/g' package/base-files/files/bin/config_generate
 
           # 避免 config out of sync
           make defconfig
@@ -133,36 +133,6 @@ jobs:
           export FORCE_UNSAFE_CONFIGURE=1
           cd ${{ github.workspace }}/${{ env.WORKDIR }}
           make download -j$(nproc)
-
-      - name: Patch Ripgrep
-        run: |
-          cd ${{ github.workspace }}/${{ env.WORKDIR }}
-          MF="feeds/packages/utils/ripgrep/Makefile"
-          if [ -f "$MF" ]; then
-            grep -qF "PKG_BUILD_FLAGS:=no-lto" "$MF" || \
-              sed -i '/^include $(INCLUDE_DIR)\/package\.mk$/i PKG_BUILD_FLAGS:=no-lto' "$MF"
-            grep -nF "PKG_BUILD_FLAGS:=no-lto" "$MF"
-          else
-            echo "Makefile not found: $MF" >&2
-            exit 1
-          fi
-
-      - name: Patch Netdata
-        run: |
-          cd ${{ github.workspace }}/${{ env.WORKDIR }}
-          MF="feeds/packages/admin/netdata/Makefile"
-          if [ -f "$MF" ]; then
-            grep -qFx '$(eval $(call BuildPackage,netdata))' "$MF" || {
-              echo "BuildPackage definition not found: $MF" >&2
-              exit 1
-            }
-            sed -i '/^CONFIGURE_ARGS += --disable-cloud$/d' "$MF"
-            sed -i '/^\$(eval \$(call BuildPackage,netdata))$/i CONFIGURE_ARGS += --disable-cloud' "$MF"
-            grep -n -B1 -A1 -F "CONFIGURE_ARGS += --disable-cloud" "$MF"
-          else
-            echo "Makefile not found: $MF" >&2
-            exit 1
-          fi
 
       - name: Build
         run: |
